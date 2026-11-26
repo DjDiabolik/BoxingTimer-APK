@@ -22,38 +22,45 @@ jobs:
         with:
           node-version: 20
 
-      - name: 3. Configura Java
+      - name: 3. Configura Java 21 (richiesto da Android Gradle recente)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: 17
+          java-version: 21
 
       - name: 4. Estrai il nome dinamico dal manifest.json
         run: |
-          # Legge il campo "name" dal manifest.json
           RAW_NAME=$(jq -r '.name // "Boxing Timer"' manifest.json)
-          # Sostituisce gli spazi con trattini per il nome del file
           CLEAN_NAME=$(echo "$RAW_NAME" | sed 's/ /-/g')
           echo "APK_FILENAME=${CLEAN_NAME}.apk" >> $GITHUB_ENV
-          echo "Nome generato per l'APK: ${CLEAN_NAME}.apk"
+          echo "Nome generato: ${CLEAN_NAME}.apk"
 
-      - name: 5. Prepara i file web per Capacitor
+      - name: 5. Prepara i file web
         run: |
           mkdir -p www
           cp index.html www/
           cp -r *.html *.png *.json *.js www/ 2>/dev/null || true
 
-      - name: 6. Inizializza Capacitor e aggiungi Android
+      - name: 6. Installa Capacitor e configura il progetto
         run: |
           npm init -y
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
-          npx cap init "Boxing Timer" "com.djdiabolik.boxingtimer" --web-dir www
+
+          # Crea la configurazione direttamente senza comandi interattivi
+          cat << 'EOF2' > capacitor.config.json
+          {
+            "appId": "com.djdiabolik.boxingtimer",
+            "appName": "Boxing Timer",
+            "webDir": "www"
+          }
+          EOF2
+
           npx cap add android
           npx cap sync android
 
-      - name: 7. Inietta WakeLock hardware nativo (schermo sempre acceso)
+      - name: 7. Inietta WakeLock hardware nativo
         run: |
-          cat << 'EOF' > android/app/src/main/java/com/djdiabolik/boxingtimer/MainActivity.java
+          cat << 'EOF2' > android/app/src/main/java/com/djdiabolik/boxingtimer/MainActivity.java
           package com.djdiabolik.boxingtimer;
 
           import android.os.Bundle;
@@ -64,29 +71,28 @@ jobs:
               @Override
               public void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  // Forza lo schermo sempre acceso a livello hardware Android
                   getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
               }
           }
-          EOF
+          EOF2
 
       - name: 8. Compila l'APK nativo con Gradle
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon
 
-      - name: 9. Prepara il file finale con il nome dinamico
+      - name: 9. Rinomina APK
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk ${{ env.APK_FILENAME }}
 
-      - name: 10. Carica l'APK come Artifact scaricabile
+      - name: 10. Carica l'APK come Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APK_FILENAME }}
           path: ${{ env.APK_FILENAME }}
 
-      - name: 11. Allega l'APK alla Release (se scatenato da una Release)
+      - name: 11. Allega l'APK alla Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
