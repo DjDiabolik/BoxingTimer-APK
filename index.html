@@ -30,7 +30,6 @@
                 width: 100vw;
                 margin: 0;
                 overflow: hidden;
-                position: fixed;
                 overscroll-behavior: none;
             }
 
@@ -673,7 +672,7 @@
                             onclick="document.getElementById('import-file').click()">
                             ⬆ IMPORTA
                         </button>
-                        <input type="file" id="import-file" style="display: none" onchange="importData(event)" />
+                        <input type="file" id="import-file" onchange="importData(event)" style="position:absolute; left:-9999px;" />
                     </div>
                 </div>
 
@@ -956,8 +955,33 @@
             ">
             <div id="tutorial-content"></div>
         </dialog>
-
+                
         <script>
+            // Polyfill per <dialog> su WebView Android che non supportano showModal()
+            if (HTMLDialogElement && !HTMLDialogElement.prototype.showModal) {
+                HTMLDialogElement.prototype.showModal = function () {
+                    this.style.display = 'flex';
+                };
+                HTMLDialogElement.prototype.close = function () {
+                    this.style.display = 'none';
+                };
+            }
+
+            // Espone Capacitor Filesystem se disponibile (per build APK Capacitor)
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+                window.CapacitorFS = window.Capacitor.Plugins.Filesystem;
+                if (!window.CapacitorFS.Directory) {
+                    window.CapacitorFS.Directory = {
+                        Documents: 'Documents',
+                        Data: 'Data',
+                        Cache: 'Cache',
+                        External: 'External',
+                        ExternalStorage: 'ExternalStorage',
+                        Library: 'Library'
+                    };
+                }
+            }
+
             // --- LOGICA CORE ---
             const DEFAULT_THEME = { fight: '#2e7d32', rest: '#d32f2f' };
             const DEFAULT_AUDIO = {
@@ -1004,24 +1028,22 @@
             let activeSources = []; // 👈 NUOVO: Tracciamento dei nodi audio attivi per cancellazione su skip/reset
             let channels = {}; // 👈 Canali mixer dedicati (Compressore -> Gain) per ogni suono
             
-            // Web Worker per precisione timer
-            const workerCode = `
-        let timer = null;
-        self.onmessage = function(e) {
-            if (e.data === 'start') {
-                if (timer) clearInterval(timer);
-                timer = setInterval(() => self.postMessage('tick'), 1000);
-            } else if (e.data === 'stop') {
-                clearInterval(timer);
-                timer = null;
+            // Timer tick compatibile con Capacitor WebView e PWA
+            let timerInterval = null;
+
+            function startTimerTick() {
+                stopTimerTick();
+                timerInterval = setInterval(() => {
+                    if (state.isRunning) tick();
+                }, 1000);
             }
-        };
-    `;
-            const workerBlob = new Blob([workerCode], { type: 'application/javascript' });
-            const timerWorker = new Worker(URL.createObjectURL(workerBlob));
-            timerWorker.onmessage = function () {
-                if (state.isRunning) tick();
-            };
+
+            function stopTimerTick() {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+            }
 
             function upgradeData() {
                 if (!config.theme) config.theme = JSON.parse(JSON.stringify(DEFAULT_THEME));
@@ -1241,13 +1263,8 @@
 
                 if (state.isRunning) {
                     state.isRunning = false;
-                    timerWorker.postMessage('stop');
+                    stopTimerTick();
                     btn.textContent = 'RIPRENDI';
-
-                    // 👈 NUOVO: Sospende l'AudioContext per congelare i suoni schedulati in background
-                    if (audioCtx && audioCtx.state === 'running') {
-                        audioCtx.suspend();
-                    }
                 } else {
                     // 👇 NUOVO: cancella eventuale gong in attesa da skip precedenti
                     if (gongDebounceTimer) {
@@ -1256,7 +1273,7 @@
                     }
                     state.isRunning = true;
                     state.lastTickTimestamp = Date.now();
-                    timerWorker.postMessage('start');
+                    startTimerTick();
                     btn.textContent = 'PAUSA';
 
                     // 👈 NUOVO: Ripristina l'AudioContext se era stato sospeso in pausa
@@ -1711,9 +1728,10 @@ function calculateTotals() {
                     const msg = (cur === n)
                         ? `Scartare le modifiche e ripristinare il preset "${n}" allo stato salvato?`
                         : `Il preset "${cur}" ha modifiche non salvate.\n\nVuoi SCARTARLE e caricare "${n}"?`;
-                    if (!confirm(msg)) {
-                        return;
-                    }
+                    showConfirm(msg, () => {
+                        applyP(n);
+                    });
+                    return;
                 }
                 applyP(n);
             }
@@ -1742,7 +1760,12 @@ function calculateTotals() {
             function saveCurrentAsPreset() {
                 const n = document.getElementById('preset-name').value.trim();
                 if (!n) return;
-                if (presets[n] && !confirm(`Esiste già un preset chiamato "${n}". Vuoi sovrascriverlo?`)) {
+                if (presets[n]) {
+                    showConfirm(`Esiste già un preset chiamato "${n}". Vuoi sovrascriverlo?`, () => {
+                        presets[n] = JSON.parse(JSON.stringify(config));
+                        applyP(n);
+                        document.getElementById('preset-name').value = '';
+                    });
                     return;
                 }
                 presets[n] = JSON.parse(JSON.stringify(config));
@@ -1751,7 +1774,7 @@ function calculateTotals() {
             }
             
             function deletePreset(name) {
-                if (confirm(`Eliminare "${name}"?`)) {
+                showConfirm(`Eliminare "${name}"?`, () => {
                     delete presets[name];
                     if (state.lastLoadedPreset === name) {
                         state.lastLoadedPreset = null;
@@ -1759,14 +1782,22 @@ function calculateTotals() {
                     }
                     save(true);
                     renderPresets();
-                }
+                });
             }
 
             function renamePreset(oldName) {
-                const n = prompt('Nuovo nome:', oldName);
-                if (n && n.trim() !== '' && n.trim() !== oldName) {
-                    const finalName = n.trim();
-                    if (presets[finalName] && !confirm(`Esiste già un preset chiamato "${finalName}". Vuoi sovrascriverlo?`)) {
+                showPrompt('Nuovo nome:', oldName, (n) => {
+                    n = n.trim();
+                    if (!n || n === oldName) return;
+                    const finalName = n;
+                    if (presets[finalName]) {
+                        showConfirm(`Esiste già un preset chiamato "${finalName}". Vuoi sovrascriverlo?`, () => {
+                            presets[finalName] = presets[oldName];
+                            delete presets[oldName];
+                            if (state.lastLoadedPreset === oldName) state.lastLoadedPreset = finalName;
+                            save(true);
+                            renderPresets();
+                        });
                         return;
                     }
                     presets[finalName] = presets[oldName];
@@ -1774,32 +1805,58 @@ function calculateTotals() {
                     if (state.lastLoadedPreset === oldName) state.lastLoadedPreset = finalName;
                     save(true);
                     renderPresets();
-                }
+                });
             }
             
             // --- EXPORT / IMPORT ---
 
-            function exportData() {
+            async function exportData() {
                 const now = new Date();
                 const ts = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}`;
                 const data = { config, presets, exportType: 'FULL_BACKUP' };
-                const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `BoxingTimer_Backup_${ts}.json`;
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                const filename = `BoxingTimer_Backup_${ts}.json`;
+
+                try {
+                    await window.CapacitorFS.Filesystem.writeFile({
+                        path: filename,
+                        data: JSON.stringify(data),
+                        directory: window.CapacitorFS.Directory.Documents,
+                        encoding: 'utf8'
+                    });
+                    alert(`Backup salvato: ${filename}`);
+                } catch (e) {
+                    // Fallback per PWA / browser
+                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                }
             }
 
-            function exportSinglePreset(name) {
+            async function exportSinglePreset(name) {
                 const safeName = name.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_');
                 const data = { config: presets[name], exportType: 'SINGLE_PRESET', presetName: name };
-                const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `Preset_${safeName}.json`;
-                a.click();
-                setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+                const filename = `Preset_${safeName}.json`;
+
+                try {
+                    await window.CapacitorFS.Filesystem.writeFile({
+                        path: filename,
+                        data: JSON.stringify(data),
+                        directory: window.CapacitorFS.Directory.Documents,
+                        encoding: 'utf8'
+                    });
+                    alert(`Preset salvato: ${filename}`);
+                } catch (e) {
+                    // Fallback per PWA / browser
+                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                }
             }
             
             function importData(event) {
@@ -1828,34 +1885,32 @@ function calculateTotals() {
                             if (!imported.presets || typeof imported.presets !== 'object' || !isValidConfig(imported.config)) {
                                 throw new Error('Backup incompleto o corrotto');
                             }
-                            const mode = confirm(
-                                'Backup Completo rilevato.\n\nPremi OK per SOVRASCRIVERE tutti i preset correnti.\nPremi ANNULLA per AGGIUNGERE i nuovi preset alla lista attuale.'
-                            );
-                            if (mode) {
-                                presets = imported.presets;
-                                config = imported.config;
-                                state.lastLoadedPreset = null;
-                                state.presetDirty = false;
-                            } else {
-                                Object.keys(imported.presets).forEach((k) => {
-                                    const incoming = imported.presets[k];
-                                    if (!isValidConfig(incoming)) return;
+                            showConfirm(
+                                'Backup Completo rilevato.\n\nPremi OK per SOVRASCRIVERE tutti i preset correnti.\nPremi ANNULLA per AGGIUNGERE i nuovi preset alla lista attuale.',
+                                () => {
+                                    presets = imported.presets;
+                                    config = imported.config;
+                                    state.lastLoadedPreset = null;
+                                    state.presetDirty = false;
+                                },
+                                () => {
+                                    Object.keys(imported.presets).forEach((k) => {
+                                        const incoming = imported.presets[k];
+                                        if (!isValidConfig(incoming)) return;
 
-                                    if (!presets[k]) {
-                                        // Preset mancante: ripristinato con il nome originale
-                                        presets[k] = incoming;
-                                    } else if (JSON.stringify(presets[k]) !== JSON.stringify(incoming)) {
-                                        // Stesso nome ma contenuti diversi: salvaguarda l'originale e crea il suffisso
-                                        let finalName = k;
-                                        let count = 1;
-                                        while (presets[finalName]) {
-                                            finalName = `${k} (${count++})`;
+                                        if (!presets[k]) {
+                                            presets[k] = incoming;
+                                        } else if (JSON.stringify(presets[k]) !== JSON.stringify(incoming)) {
+                                            let finalName = k;
+                                            let count = 1;
+                                            while (presets[finalName]) {
+                                                finalName = `${k} (${count++})`;
+                                            }
+                                            presets[finalName] = incoming;
                                         }
-                                        presets[finalName] = incoming;
-                                    }
-                                    // Se JSON.stringify è identico, non fa nulla (ignora il duplicato perfetto)
-                                });
-                            }
+                                    });
+                                }
+                            );
                         } else if (imported.exportType === 'SINGLE_PRESET') {
                             if (!isValidConfig(imported.config)) {
                                 throw new Error('Configurazione preset corrotta o non valida');
@@ -2080,7 +2135,7 @@ function calculateTotals() {
                 state.phaseIndex = 0;
                 state.isRunning = false;
                 state.gongJustPlayed = false;
-                timerWorker.postMessage('stop');
+                stopTimerTick();
                 document.getElementById('btn-toggle').textContent = 'START';
                 document.getElementById('status-display').textContent = 'PRONTO?';
                 updateUI();
@@ -2170,7 +2225,8 @@ function calculateTotals() {
                 }
             }
 
-            if ('serviceWorker' in navigator) {
+                if (false && 'serviceWorker' in navigator) {
+                /* Service Worker disabilitato per build Android */
                 navigator.serviceWorker.addEventListener('controllerchange', () => {
                     if (refreshing) return;
                     refreshing = true;
@@ -2274,6 +2330,124 @@ function calculateTotals() {
                     resetTimer();
                 }
             });
+            
+// --- DIALOG PERSONALIZZATI PER ANDROID WEBVIEW ---
+function showConfirm(message, onOk, onCancel) {
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.background = 'rgba(0,0,0,0.85)';
+  overlay.style.display = 'flex';
+  overlay.style.flexDirection = 'column';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '999999';
+  overlay.style.fontFamily = 'inherit';
+  overlay.style.padding = '20px';
+
+  const txt = document.createElement('div');
+  txt.textContent = message;
+  txt.style.color = '#fff';
+  txt.style.fontSize = '1.1rem';
+  txt.style.marginBottom = '24px';
+  txt.style.textAlign = 'center';
+
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '12px';
+
+  const ok = document.createElement('button');
+  ok.textContent = 'OK';
+  ok.style.padding = '10px 22px';
+  ok.style.background = '#2196F3';
+  ok.style.color = '#fff';
+  ok.style.border = 'none';
+  ok.style.borderRadius = '8px';
+  ok.style.cursor = 'pointer';
+  ok.style.fontWeight = 'bold';
+
+  const cancel = document.createElement('button');
+  cancel.textContent = 'Annulla';
+  cancel.style.padding = '10px 22px';
+  cancel.style.background = '#444';
+  cancel.style.color = '#fff';
+  cancel.style.border = 'none';
+  cancel.style.borderRadius = '8px';
+  cancel.style.cursor = 'pointer';
+
+  ok.onclick = () => { document.body.removeChild(overlay); if (onOk) onOk(); };
+  cancel.onclick = () => { document.body.removeChild(overlay); if (onCancel) onCancel(); };
+
+  row.appendChild(ok);
+  row.appendChild(cancel);
+  overlay.appendChild(txt);
+  overlay.appendChild(row);
+  document.body.appendChild(overlay);
+}
+
+function showPrompt(message, defaultValue, onOk, onCancel) {
+  const overlay = document.createElement('div');
+  overlay.style.position = 'fixed';
+  overlay.style.inset = '0';
+  overlay.style.background = 'rgba(0,0,0,0.85)';
+  overlay.style.display = 'flex';
+  overlay.style.flexDirection = 'column';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '999999';
+  overlay.style.fontFamily = 'inherit';
+  overlay.style.padding = '20px';
+
+  const txt = document.createElement('div');
+  txt.textContent = message;
+  txt.style.color = '#fff';
+  txt.style.fontSize = '1.1rem';
+  txt.style.marginBottom = '12px';
+  txt.style.textAlign = 'center';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = defaultValue || '';
+  input.style.padding = '8px 12px';
+  input.style.borderRadius = '6px';
+  input.style.border = 'none';
+  input.style.marginBottom = '16px';
+  input.style.width = '260px';
+  input.style.color = '#000';
+
+  const row = document.createElement('div');
+  row.style.display = 'flex';
+  row.style.gap = '12px';
+
+  const ok = document.createElement('button');
+  ok.textContent = 'OK';
+  ok.style.padding = '8px 20px';
+  ok.style.background = '#2196F3';
+  ok.style.color = '#fff';
+  ok.style.border = 'none';
+  ok.style.borderRadius = '6px';
+  ok.style.cursor = 'pointer';
+
+  const cancel = document.createElement('button');
+  cancel.textContent = 'Annulla';
+  cancel.style.padding = '8px 20px';
+  cancel.style.background = '#444';
+  cancel.style.color = '#fff';
+  cancel.style.border = 'none';
+  cancel.style.borderRadius = '6px';
+  cancel.style.cursor = 'pointer';
+
+  ok.onclick = () => { document.body.removeChild(overlay); if (onOk) onOk(input.value); };
+  cancel.onclick = () => { document.body.removeChild(overlay); if (onCancel) onCancel(); };
+
+  row.appendChild(ok);
+  row.appendChild(cancel);
+  overlay.appendChild(txt);
+  overlay.appendChild(input);
+  overlay.appendChild(row);
+  document.body.appendChild(overlay);
+  input.focus();
+}            
         </script>
     </body>
 </html>

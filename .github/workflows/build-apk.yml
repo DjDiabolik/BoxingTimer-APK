@@ -44,7 +44,7 @@ jobs:
       - name: 6. Installa Capacitor e configura il progetto
         run: |
           npm init -y
-          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest
 
           cat << EOF_CONF > capacitor.config.json
           {
@@ -56,6 +56,7 @@ jobs:
 
           npx cap add android
           npx cap sync android
+          npx cap copy
 
       - name: 7. Imposta icona nativa e Splash Screen con layer-list
         run: |
