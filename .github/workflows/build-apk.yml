@@ -34,7 +34,6 @@ jobs:
           CLEAN_NAME=$(echo "$RAW_NAME" | sed 's/ /-/g')
           echo "APK_FILENAME=${CLEAN_NAME}.apk" >> $GITHUB_ENV
           echo "APP_NAME_STRING=${RAW_NAME}" >> $GITHUB_ENV
-          echo "Nome estratto: ${RAW_NAME}"
 
       - name: 5. Prepara i file web
         run: |
@@ -47,52 +46,55 @@ jobs:
           npm init -y
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
 
-          # Configura la SplashScreen senza stretching (CENTER_INSIDE) e sfondo scuro
           cat << EOF_CONF > capacitor.config.json
           {
             "appId": "com.djdiabolik.boxingtimer",
             "appName": "${APP_NAME_STRING}",
-            "webDir": "www",
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 1000,
-                "launchAutoHide": true,
-                "backgroundColor": "#121212",
-                "androidScaleType": "CENTER_INSIDE",
-                "showSpinner": false
-              }
-            }
+            "webDir": "www"
           }
           EOF_CONF
 
           npx cap add android
           npx cap sync android
 
-      - name: 7. Imposta icona, splash screen e tema scuro nativo
+      - name: 7. Imposta icona nativa e Splash Screen con layer-list
         run: |
-          # 1. Nome dell'app
+          # 1. Nome app
           sed -i "s|<string name=\"app_name\">.*</string>|<string name=\"app_name\">${APP_NAME_STRING}</string>|g" android/app/src/main/res/values/strings.xml
 
-          # 2. Icone del launcher di Android
+          # 2. Sostituisce le icone del launcher
           for dir in android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi; do
             cp icon.png "$dir/ic_launcher.png"
             cp icon.png "$dir/ic_launcher_round.png"
             cp maskable_icon_x512.png "$dir/ic_launcher_foreground.png" 2>/dev/null || cp icon.png "$dir/ic_launcher_foreground.png"
           done
 
-          # 3. Sostituisce le immagini della Splash Screen
-          find android/app/src/main/res -name "splash.png" -exec cp icon.png {} \;
+          # 3. Elimina tutti i vecchi splash.png per evitare conflitti di duplicati in Gradle
+          find android/app/src/main/res -name "splash.png" -delete
 
-          # 4. Elimina il flash bianco del tema Android impostando lo sfondo nativo #121212
-          sed -i 's|<item name="android:background">.*</item>|<item name="android:background">#121212</item>|g' android/app/src/main/res/values/styles.xml 2>/dev/null || true
-
-          # 5. Sfondo scuro per icone adattive
+          # 4. Sfondo scuro per le icone
           cat << 'EOF_BG' > android/app/src/main/res/values/ic_launcher_background.xml
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <color name="ic_launcher_background">#121212</color>
           </resources>
           EOF_BG
+
+          # 5. Crea il layer-list con sfondo scuro e icona centrata a 128dp
+          cat << 'EOF_SPLASH' > android/app/src/main/res/drawable/splash.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:drawable="@color/ic_launcher_background"/>
+              <item
+                  android:gravity="center"
+                  android:width="128dp"
+                  android:height="128dp"
+                  android:drawable="@mipmap/ic_launcher"/>
+          </layer-list>
+          EOF_SPLASH
+
+          # 6. Ripristina il riferimento a @drawable/splash nel tema
+          sed -i 's|<item name="android:background">.*</item>|<item name="android:background">@drawable/splash</item>|g' android/app/src/main/res/values/styles.xml 2>/dev/null || true
 
       - name: 8. Inietta WakeLock hardware nativo
         run: |
