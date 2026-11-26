@@ -47,6 +47,7 @@ jobs:
           npm init -y
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
 
+          # Configura la SplashScreen senza stretching (CENTER_INSIDE) e sfondo scuro
           cat << EOF_CONF > capacitor.config.json
           {
             "appId": "com.djdiabolik.boxingtimer",
@@ -56,7 +57,9 @@ jobs:
               "SplashScreen": {
                 "launchShowDuration": 1000,
                 "launchAutoHide": true,
-                "backgroundColor": "#121212"
+                "backgroundColor": "#121212",
+                "androidScaleType": "CENTER_INSIDE",
+                "showSpinner": false
               }
             }
           }
@@ -65,7 +68,7 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: 7. Imposta icona, splash screen e nome nativo
+      - name: 7. Imposta icona, splash screen e tema scuro nativo
         run: |
           # 1. Nome dell'app
           sed -i "s|<string name=\"app_name\">.*</string>|<string name=\"app_name\">${APP_NAME_STRING}</string>|g" android/app/src/main/res/values/strings.xml
@@ -77,10 +80,13 @@ jobs:
             cp maskable_icon_x512.png "$dir/ic_launcher_foreground.png" 2>/dev/null || cp icon.png "$dir/ic_launcher_foreground.png"
           done
 
-          # 3. Sostituisce la Splash Screen (schermata di caricamento) con la tua icona
+          # 3. Sostituisce le immagini della Splash Screen
           find android/app/src/main/res -name "splash.png" -exec cp icon.png {} \;
 
-          # 4. Sfondo scuro (#121212) sia per le icone che per la schermata di avvio
+          # 4. Elimina il flash bianco del tema Android impostando lo sfondo nativo #121212
+          sed -i 's|<item name="android:background">.*</item>|<item name="android:background">#121212</item>|g' android/app/src/main/res/values/styles.xml 2>/dev/null || true
+
+          # 5. Sfondo scuro per icone adattive
           cat << 'EOF_BG' > android/app/src/main/res/values/ic_launcher_background.xml
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
