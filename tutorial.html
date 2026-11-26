@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tutorial - Boxing Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #121212;
+            color: white;
+            padding: 20px;
+            line-height: 1.5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 1.8rem;
+            text-align: center;
+            color: #2196F3;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: #1e1e1e;
+            border-radius: 20px;
+            margin-bottom: 25px;
+            padding: 20px;
+            border: 1px solid #333;
+        }
+        .card h2 {
+            font-size: 1.3rem;
+            margin-bottom: 12px;
+            color: #2196F3;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .demo-controls {
+            background: #2a2a2a;
+            border-radius: 16px;
+            padding: 15px;
+            margin: 15px 0;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        /* Replica stili pulsanti originali (non interattivi) */
+        .mock-btn {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(5px);
+            padding: 12px 20px;
+            border-radius: 15px;
+            font-weight: bold;
+            font-size: 1rem;
+            color: white;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: default;
+            pointer-events: none;
+        }
+        .mock-start {
+            background: #2196F3;
+            flex: 2;
+            min-width: 100px;
+        }
+        .mock-skip {
+            background: rgba(255,255,255,0.1);
+        }
+        .mock-reset {
+            background: rgba(255,255,255,0.1);
+        }
+        .mock-phase {
+            background: #2e7d32;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .mock-rest {
+            background: #d32f2f;
+        }
+        .badge {
+            background: #333;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+        .note {
+            background: #2a2a2a;
+            border-left: 4px solid #ff9800;
+            padding: 12px;
+            margin-top: 15px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        hr {
+            border-color: #333;
+            margin: 15px 0;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🥊 GUIDA AL BOXING TIMER</h1>
+
+    <div class="card">
+        <h2>⏯️ Controlli principali</h2>
+        <div class="demo-controls">
+            <div class="mock-btn mock-skip">⏮</div>
+            <div class="mock-btn mock-start">START / PAUSA</div>
+            <div class="mock-btn mock-skip">⏭</div>
+            <div class="mock-btn mock-reset">RESET</div>
+        </div>
+        <p><strong>START/PAUSA</strong> – Avvia o mette in pausa il timer. Durante l'esecuzione, lo sfondo cambia colore (verde per LAVORO, rosso per RIPOSO).<br>
+        <strong>⏮ / ⏭</strong> – Saltano alla fase precedente o successiva.<br>
+        <strong>RESET</strong> – Ferma il timer e riporta all'inizio della sequenza.</p>
+    </div>
+
+    <div class="card">
+        <h2>⚙️ Impostazioni e struttura</h2>
+        <p>Clicca sull'icona <strong>⚙️</strong> in alto a destra per aprire il pannello.</p>
+        <p>Qui puoi:</p>
+        <ul style="margin-left: 20px; margin-bottom: 10px;">
+            <li><strong>Gestire le fasi</strong>: aggiungi, clona, elimina, sposta su/giù, imposta durata ed etichetta personalizzata.</li>
+            <li><strong>Tipo fase</strong>: ogni fase può essere LAVORO (sfondo verde) o RIPOSO (sfondo rosso).</li>
+            <li><strong>Scatti casuali (solo LAVORO)</strong>: attivando "SCATTI ON" sentirai un suono a tempo casuale nel range di secondi impostato.</li>
+            <li><strong>Avviso fine riposo (solo RIPOSO)</strong>: attivando "FUORI SECONDI ON" sentirai un warning a 10 secondi e tick negli ultimi 3 secondi.</li>
+        </ul>
+        <div class="demo-controls" style="justify-content: flex-start;">
+            <div class="mock-btn mock-phase">LAVORO</div>
+            <div class="mock-btn mock-phase mock-rest">RIPOSO</div>
+            <div class="badge">⚡ SCATTI ON</div>
+            <div class="badge">🔔 FUORI SECONDI ON</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>💾 Preset di allenamento</h2>
+        <p>Salva la configurazione corrente come Preset con un nome, carica preset salvati, rinominali, esportali o importali. Puoi fare un backup completo di tutti i preset e delle impostazioni.</p>
+        <div class="demo-controls" style="justify-content: flex-start;">
+            <div class="badge">💾 SALVA</div>
+            <div class="badge">📂 CARICA</div>
+            <div class="badge">⬇ BACKUP</div>
+            <div class="badge">⬆ IMPORTA</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>🧪 Laboratorio (suoni e colori)</h2>
+        <p>Nel pannello impostazioni, clicca su "LABORATORIO" per:</p>
+        <ul style="margin-left: 20px;">
+            <li>Regolare il volume master e testare i suoni in loop.</li>
+            <li>Cambiare il tipo d’onda e la frequenza di Gong, Tick e Scatto.</li>
+            <li>Modificare i colori di sfondo per le fasi LAVORO e RIPOSO.</li>
+            <li>Attivare la sintesi vocale (annuncia "Round X" o "Riposo").</li>
+        </ul>
+        <div class="note">
+            💡 <strong>Suggerimento</strong>: Il timer funziona anche in background e mantiene lo schermo acceso grazie alla Wake Lock API.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📱 Altre funzioni</h2>
+        <p><strong>FULLSCREEN</strong> – Ingrandisce il timer a tutto schermo.<br>
+        <strong>Timer totale</strong> – In alto viene mostrato il tempo accumulato della sessione.<br>
+        <strong>Round</strong> – Il numero di round incrementa automaticamente al termine di ogni ciclo di fasi.</p>
+        <p>L'app è una PWA: puoi installarla sul telefono e usarla offline. Gli aggiornamenti vengono rilevati automaticamente.</p>
+    </div>
+
+    <div class="footer">
+        Boxing Timer v7.0.1 – Allenati con disciplina 💪
+    </div>
+</div>
+</body>
+</html>

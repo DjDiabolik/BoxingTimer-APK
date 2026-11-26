@@ -1,0 +1,93 @@
+name: Build Android APK (Capacitor)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Scarica il repository
+        uses: actions/checkout@v4
+
+      - name: 2. Configura Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 3. Configura Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: 4. Estrai il nome dinamico dal manifest.json
+        run: |
+          # Legge il campo "name" dal manifest.json
+          RAW_NAME=$(jq -r '.name // "Boxing Timer"' manifest.json)
+          # Sostituisce gli spazi con trattini per il nome del file
+          CLEAN_NAME=$(echo "$RAW_NAME" | sed 's/ /-/g')
+          echo "APK_FILENAME=${CLEAN_NAME}.apk" >> $GITHUB_ENV
+          echo "Nome generato per l'APK: ${CLEAN_NAME}.apk"
+
+      - name: 5. Prepara i file web per Capacitor
+        run: |
+          mkdir -p www
+          cp index.html www/
+          cp -r *.html *.png *.json *.js www/ 2>/dev/null || true
+
+      - name: 6. Inizializza Capacitor e aggiungi Android
+        run: |
+          npm init -y
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
+          npx cap init "Boxing Timer" "com.djdiabolik.boxingtimer" --web-dir www
+          npx cap add android
+          npx cap sync android
+
+      - name: 7. Inietta WakeLock hardware nativo (schermo sempre acceso)
+        run: |
+          cat << 'EOF' > android/app/src/main/java/com/djdiabolik/boxingtimer/MainActivity.java
+          package com.djdiabolik.boxingtimer;
+
+          import android.os.Bundle;
+          import android.view.WindowManager;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  // Forza lo schermo sempre acceso a livello hardware Android
+                  getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+              }
+          }
+          EOF
+
+      - name: 8. Compila l'APK nativo con Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: 9. Prepara il file finale con il nome dinamico
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk ${{ env.APK_FILENAME }}
+
+      - name: 10. Carica l'APK come Artifact scaricabile
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK_FILENAME }}
+          path: ${{ env.APK_FILENAME }}
+
+      - name: 11. Allega l'APK alla Release (se scatenato da una Release)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APK_FILENAME }}
