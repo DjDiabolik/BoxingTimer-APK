@@ -967,6 +967,17 @@
                 };
             }
 
+            // Caricamento condizionale del runtime Capacitor (presente solo nella build APK)
+            (function() {
+                var s = document.createElement('script');
+                s.src = 'capacitor.js';
+                s.defer = true;
+                s.onerror = function() {
+                    // Se non esiste (PWA), ignorare silenziosamente
+                };
+                document.head.appendChild(s);
+            })();
+
             // Espone Capacitor Filesystem se disponibile (per build APK Capacitor)
             if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
                 window.CapacitorFS = window.Capacitor.Plugins.Filesystem;
@@ -1275,11 +1286,6 @@
                     state.lastTickTimestamp = Date.now();
                     startTimerTick();
                     btn.textContent = 'PAUSA';
-
-                    // 👈 NUOVO: Ripristina l'AudioContext se era stato sospeso in pausa
-                    if (audioCtx && audioCtx.state === 'suspended') {
-                        audioCtx.resume();
-                    }
 
                     if (state.timeLeft === state.sessionPhases[state.phaseIndex].dur) {
                         if (!state.gongJustPlayed) {

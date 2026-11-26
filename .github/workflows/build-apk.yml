@@ -58,6 +58,12 @@ jobs:
           npx cap sync android
           npx cap copy
 
+      - name: 6b. Copia runtime Capacitor se presente
+        run: |
+          if [ -f android/app/src/main/assets/www/capacitor.js ]; then
+            cp android/app/src/main/assets/www/capacitor.js www/
+          fi
+
       - name: 7. Imposta icona nativa e Splash Screen con layer-list
         run: |
           # 1. Nome app
