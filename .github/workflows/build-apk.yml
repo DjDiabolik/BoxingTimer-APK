@@ -17,12 +17,12 @@ jobs:
       - name: 1. Scarica il repository
         uses: actions/checkout@v4
 
-      - name: 2. Configura Node.js
+      - name: 2. Configura Node.js 22 (richiesto da Capacitor recente)
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: 3. Configura Java 21 (richiesto da Android Gradle recente)
+      - name: 3. Configura Java 21 (richiesto da Gradle recente)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
@@ -46,7 +46,7 @@ jobs:
           npm init -y
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
 
-          # Crea la configurazione direttamente senza comandi interattivi
+          # Crea la configurazione non interattiva
           cat << 'EOF2' > capacitor.config.json
           {
             "appId": "com.djdiabolik.boxingtimer",
