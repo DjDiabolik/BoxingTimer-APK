@@ -978,19 +978,25 @@
                 document.head.appendChild(s);
             })();
 
-            // Espone Capacitor Filesystem se disponibile (per build APK Capacitor)
+            // Espone Capacitor Filesystem e Share se disponibili (per build APK Capacitor)
+            // NB: nella WebView il plugin nativo e' gia' l'oggetto con i metodi (writeFile, share...):
+            // non esiste window.CapacitorFS.Filesystem. I valori di Directory devono essere quelli
+            // ufficiali del plugin (MAIUSCOLI), altrimenti il plugin non riconosce la cartella.
             if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
                 window.CapacitorFS = window.Capacitor.Plugins.Filesystem;
                 if (!window.CapacitorFS.Directory) {
                     window.CapacitorFS.Directory = {
-                        Documents: 'Documents',
-                        Data: 'Data',
-                        Cache: 'Cache',
-                        External: 'External',
-                        ExternalStorage: 'ExternalStorage',
-                        Library: 'Library'
+                        Documents: 'DOCUMENTS',
+                        Data: 'DATA',
+                        Cache: 'CACHE',
+                        External: 'EXTERNAL',
+                        ExternalStorage: 'EXTERNAL_STORAGE',
+                        Library: 'LIBRARY'
                     };
                 }
+            }
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) {
+                window.CapacitorShare = window.Capacitor.Plugins.Share;
             }
 
             // --- LOGICA CORE ---
@@ -1816,29 +1822,55 @@ function calculateTotals() {
             
             // --- EXPORT / IMPORT ---
 
+            // Salva un file di testo: su APK lo scrive nella cache dell'app e apre il menu "Condividi" di Android
+            // (da li' si sceglie dove salvarlo, es. Download); su PWA/browser usa il download classico.
+            async function saveFileToDevice(filename, text) {
+                const FS = window.CapacitorFS;
+                const SH = window.CapacitorShare;
+                const isNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+
+                if (isNative) {
+                    if (!FS || !SH) {
+                        alert('Salvataggio non disponibile: plugin Filesystem/Share non trovati nell\'APK.');
+                        return;
+                    }
+                    try {
+                        const res = await FS.writeFile({
+                            path: filename,
+                            data: text,
+                            directory: FS.Directory.Cache,
+                            encoding: 'utf8'
+                        });
+                        await SH.share({
+                            title: filename,
+                            dialogTitle: 'Salva o condividi il file',
+                            files: [res.uri]
+                        });
+                    } catch (e) {
+                        const msg = String((e && e.message) || e || '');
+                        // Se l'utente chiude il menu Condividi non e' un errore
+                        if (/cancel/i.test(msg)) return;
+                        alert('Errore nel salvataggio del file: ' + msg);
+                    }
+                    return;
+                }
+
+                // Fallback per PWA / browser
+                const blob = new Blob([text], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            }
+
             async function exportData() {
                 const now = new Date();
                 const ts = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}`;
                 const data = { config, presets, exportType: 'FULL_BACKUP' };
                 const filename = `BoxingTimer_Backup_${ts}.json`;
 
-                try {
-                    await window.CapacitorFS.Filesystem.writeFile({
-                        path: filename,
-                        data: JSON.stringify(data),
-                        directory: window.CapacitorFS.Directory.Documents,
-                        encoding: 'utf8'
-                    });
-                    alert(`Backup salvato: ${filename}`);
-                } catch (e) {
-                    // Fallback per PWA / browser
-                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = filename;
-                    a.click();
-                    URL.revokeObjectURL(a.href);
-                }
+                await saveFileToDevice(filename, JSON.stringify(data));
             }
 
             async function exportSinglePreset(name) {
@@ -1846,23 +1878,7 @@ function calculateTotals() {
                 const data = { config: presets[name], exportType: 'SINGLE_PRESET', presetName: name };
                 const filename = `Preset_${safeName}.json`;
 
-                try {
-                    await window.CapacitorFS.Filesystem.writeFile({
-                        path: filename,
-                        data: JSON.stringify(data),
-                        directory: window.CapacitorFS.Directory.Documents,
-                        encoding: 'utf8'
-                    });
-                    alert(`Preset salvato: ${filename}`);
-                } catch (e) {
-                    // Fallback per PWA / browser
-                    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(blob);
-                    a.download = filename;
-                    a.click();
-                    URL.revokeObjectURL(a.href);
-                }
+                await saveFileToDevice(filename, JSON.stringify(data));
             }
             
             function importData(event) {
@@ -1877,6 +1893,21 @@ function calculateTotals() {
                         cfg.phases.length > 0 &&
                         cfg.phases.every((p) => p && typeof p === 'object' && Number(p.dur) > 0)
                     );
+                };
+
+                // Applica i dati importati: va chiamata DOPO che le modifiche a presets/config sono state fatte
+                // (showConfirm non e' bloccante, quindi per il backup completo viene chiamata dentro i callback)
+                const finalizeImport = () => {
+                    try {
+                        upgradeData();
+                        applyThemeToCSS();
+                        updateLabUI();
+                        save(true);
+                        renderPhases();
+                        renderPresets();
+                    } catch (err) {
+                        alert('Errore nel file di importazione: file corrotto o formato non supportato.');
+                    }
                 };
 
                 const reader = new FileReader();
@@ -1898,6 +1929,7 @@ function calculateTotals() {
                                     config = imported.config;
                                     state.lastLoadedPreset = null;
                                     state.presetDirty = false;
+                                    finalizeImport();
                                 },
                                 () => {
                                     Object.keys(imported.presets).forEach((k) => {
@@ -1915,8 +1947,11 @@ function calculateTotals() {
                                             presets[finalName] = incoming;
                                         }
                                     });
+                                    finalizeImport();
                                 }
                             );
+                            // Il resto viene applicato dentro i callback di showConfirm
+                            return;
                         } else if (imported.exportType === 'SINGLE_PRESET') {
                             if (!isValidConfig(imported.config)) {
                                 throw new Error('Configurazione preset corrotta o non valida');
@@ -1938,12 +1973,7 @@ function calculateTotals() {
                             }
                             Object.assign(presets, imported.presets);
                         }
-                        upgradeData();
-                        applyThemeToCSS();
-                        updateLabUI();
-                        save(true);
-                        renderPhases();
-                        renderPresets();
+                        finalizeImport();
                     } catch (err) {
                         alert('Errore nel file di importazione: file corrotto o formato non supportato.');
                     } finally {

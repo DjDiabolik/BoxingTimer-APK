@@ -44,7 +44,7 @@ jobs:
       - name: 6. Installa Capacitor e configura il progetto
         run: |
           npm init -y
-          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest
+          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest @capacitor/filesystem@latest @capacitor/share@latest
 
           cat << EOF_CONF > capacitor.config.json
           {
