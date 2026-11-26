@@ -47,31 +47,40 @@ jobs:
           npm init -y
           npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
 
-          # Scrive il nome completo dell'app estratto dal manifest
           cat << EOF_CONF > capacitor.config.json
           {
             "appId": "com.djdiabolik.boxingtimer",
             "appName": "${APP_NAME_STRING}",
-            "webDir": "www"
+            "webDir": "www",
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 1000,
+                "launchAutoHide": true,
+                "backgroundColor": "#121212"
+              }
+            }
           }
           EOF_CONF
 
           npx cap add android
           npx cap sync android
 
-      - name: 7. Imposta icona e nome nativo Android
+      - name: 7. Imposta icona, splash screen e nome nativo
         run: |
-          # 1. Forza il nome dell'app visibile nel launcher di Android
+          # 1. Nome dell'app
           sed -i "s|<string name=\"app_name\">.*</string>|<string name=\"app_name\">${APP_NAME_STRING}</string>|g" android/app/src/main/res/values/strings.xml
 
-          # 2. Sostituisce il logo predefinito di Capacitor con le tue icone PNG
+          # 2. Icone del launcher di Android
           for dir in android/app/src/main/res/mipmap-hdpi android/app/src/main/res/mipmap-mdpi android/app/src/main/res/mipmap-xhdpi android/app/src/main/res/mipmap-xxhdpi android/app/src/main/res/mipmap-xxxhdpi; do
             cp icon.png "$dir/ic_launcher.png"
             cp icon.png "$dir/ic_launcher_round.png"
             cp maskable_icon_x512.png "$dir/ic_launcher_foreground.png" 2>/dev/null || cp icon.png "$dir/ic_launcher_foreground.png"
           done
 
-          # 3. Imposta lo sfondo scuro (#121212) per l'icona adattiva di Android
+          # 3. Sostituisce la Splash Screen (schermata di caricamento) con la tua icona
+          find android/app/src/main/res -name "splash.png" -exec cp icon.png {} \;
+
+          # 4. Sfondo scuro (#121212) sia per le icone che per la schermata di avvio
           cat << 'EOF_BG' > android/app/src/main/res/values/ic_launcher_background.xml
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
