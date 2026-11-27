@@ -1822,14 +1822,27 @@ function calculateTotals() {
             
             // --- EXPORT / IMPORT ---
 
-            // Salva un file di testo: su APK lo scrive nella cache dell'app e apre il menu "Condividi" di Android
-            // (da li' si sceglie dove salvarlo, es. Download); su PWA/browser usa il download classico.
+            // Salva un file di testo: su APK lo salva direttamente in Download (plugin nativo FileSaver); se non e'
+            // disponibile lo scrive nella cache dell'app e apre il menu "Condividi" di Android;
+            // su PWA/browser usa il download classico.
             async function saveFileToDevice(filename, text) {
                 const FS = window.CapacitorFS;
                 const SH = window.CapacitorShare;
                 const isNative = !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
 
                 if (isNative) {
+                    // 1) Salvataggio diretto nella cartella Download (plugin nativo FileSaver), come fa Chrome
+                    const FSV = window.Capacitor.Plugins && window.Capacitor.Plugins.FileSaver;
+                    if (FSV) {
+                        try {
+                            const r = await FSV.save({ filename: filename, data: text });
+                            alert('File salvato nella cartella Download:\n' + ((r && r.name) || filename));
+                            return;
+                        } catch (e) {
+                            // se non riesce si ripiega sul menu Condividi qui sotto
+                        }
+                    }
+                    // 2) Ripiego: scrive in cache e apre il menu Condividi di Android
                     if (!FS || !SH) {
                         alert('Salvataggio non disponibile: plugin Filesystem/Share non trovati nell\'APK.');
                         return;
